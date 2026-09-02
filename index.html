@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>eblockwatch control room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --sky:#16232f;      /* base */
+    --deck:#1f2f3d;     /* panels */
+    --line:#33475a;
+    --ink:#e9eef3;
+    --dim:#9fb0c0;
+    --green:#3ddc84;
+    --amber:#ffb020;
+    --red:#ff4d4f;
+    --home:#7fb7ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--sky);color:var(--ink);font-family:Barlow,system-ui,sans-serif;font-size:16px;line-height:1.35}
+  button,input{font:inherit}
+  /* login */
+  #login{position:fixed;inset:0;display:grid;place-items:center;background:var(--sky);z-index:20;padding:24px}
+  #login form{width:100%;max-width:360px;display:grid;gap:12px}
+  #login h1{font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-weight:600;font-size:28px;letter-spacing:.01em}
+  #login p{color:var(--dim)}
+  #login input{padding:14px;border-radius:8px;border:1px solid var(--line);background:var(--deck);color:var(--ink)}
+  #login button{padding:14px;border-radius:8px;border:0;background:var(--green);color:#08210f;font-weight:600}
+  #login .alt{background:transparent;color:var(--dim);border:1px solid var(--line)}
+  #login .msg{min-height:1.4em;color:var(--amber)}
+  /* app */
+  #app{display:none;min-height:100%;grid-template-rows:auto 1fr;}
+  header{display:flex;align-items:baseline;justify-content:space-between;padding:12px 16px 8px;gap:12px}
+  header h1{font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-weight:600;font-size:22px}
+  header .stamp{color:var(--dim);font-size:14px}
+  header .stamp.stale{color:var(--amber)}
+  #attention{display:none;margin:0 16px 8px;padding:12px 14px;border-radius:8px;background:#3a1f22;border:1px solid var(--red);font-weight:500}
+  #attention.amber{background:#3a2e14;border-color:var(--amber)}
+  #map{height:52vh;min-height:300px;background:#0d1721}
+  .leaflet-container{background:#0d1721;font:inherit}
+  .key{display:flex;gap:16px;padding:8px 16px;color:var(--dim);font-size:14px;flex-wrap:wrap}
+  .key i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  main{padding:8px 16px 32px;display:grid;gap:24px}
+  section h2{font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-weight:500;font-size:15px;color:var(--dim);margin-bottom:8px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  @media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)} #map{height:60vh}}
+  .n{background:var(--deck);border-radius:10px;padding:12px 14px;border-left:3px solid var(--line)}
+  .n b{display:block;font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-size:32px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+  .n span{display:block;color:var(--dim);font-size:14px;margin-top:6px}
+  .n.good{border-left-color:var(--green)} .n.warn{border-left-color:var(--amber)} .n.bad{border-left-color:var(--red)}
+  .list{display:grid;gap:6px}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:10px 14px;background:var(--deck);border-radius:8px}
+  .row .st{font-weight:500}
+  .row .st.off{color:var(--red)} .row .st.on{color:var(--green)}
+  .row small{color:var(--dim)}
+  footer{padding:0 16px 40px;color:var(--dim);font-size:14px;display:flex;justify-content:space-between;gap:12px}
+  footer button{background:none;border:1px solid var(--line);color:var(--dim);padding:8px 12px;border-radius:8px}
+  @media(prefers-reduced-motion:no-preference){ .n b{transition:color .3s} }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <form id="loginForm">
+    <h1>eblockwatch control room</h1>
+    <p>Sign in with your eblockwatch operator account.</p>
+    <input id="email" type="email" autocomplete="username" placeholder="Email" value="ryfsny@gmail.com" required>
+    <input id="password" type="password" autocomplete="current-password" placeholder="Password">
+    <button type="submit">Sign in</button>
+    <button type="button" class="alt" id="magic">Email me a sign-in link instead</button>
+    <div class="msg" id="loginMsg"></div>
+  </form>
+</div>
+
+<div id="app">
+  <header>
+    <h1>Control room</h1>
+    <div class="stamp" id="stamp">loading…</div>
+  </header>
+  <div id="attention"></div>
+  <div id="map"></div>
+  <div class="key">
+    <span><i style="background:var(--home)"></i>Member at home</span>
+    <span><i style="background:var(--green)"></i>Travelling, fine</span>
+    <span><i style="background:var(--amber)"></i>Amber hour</span>
+    <span><i style="background:var(--red)"></i>Red</span>
+  </div>
+  <main>
+    <section>
+      <h2>Trips right now</h2>
+      <div class="grid" id="trips"></div>
+    </section>
+    <section>
+      <h2>Members</h2>
+      <div class="grid" id="members"></div>
+    </section>
+    <section>
+      <h2>WhatsApp today</h2>
+      <div class="grid" id="whatsapp"></div>
+    </section>
+    <section>
+      <h2>Money</h2>
+      <div class="grid" id="money"></div>
+    </section>
+    <section>
+      <h2>Machines that should be running</h2>
+      <div class="list" id="crons"></div>
+    </section>
+  </main>
+  <footer>
+    <span id="truth"></span>
+    <button id="signout">Sign out</button>
+  </footer>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const SUPABASE_URL = 'https://dymtsrhhjwtwbkzpdwhz.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_5EPYvLIERZ4ZzQ1-R3WU6Q_NDIz_egj';
+const REFRESH_MS = 60_000;
+
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = id => document.getElementById(id);
+
+// ---------- auth ----------
+const loginMsg = $('loginMsg');
+$('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  loginMsg.textContent = 'Signing in…';
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+  loginMsg.textContent = error ? error.message : '';
+});
+$('magic').addEventListener('click', async () => {
+  loginMsg.textContent = 'Sending link…';
+  const { error } = await sb.auth.signInWithOtp({ email: $('email').value.trim(), options: { emailRedirectTo: location.href.split('#')[0] } });
+  loginMsg.textContent = error ? error.message : 'Link sent. Open it on this device.';
+});
+$('signout').addEventListener('click', () => sb.auth.signOut());
+
+let timer = null;
+sb.auth.onAuthStateChange((_ev, session) => {
+  if (session) { $('login').style.display = 'none'; $('app').style.display = 'grid'; start(); }
+  else { $('login').style.display = 'grid'; $('app').style.display = 'none'; clearInterval(timer); }
+});
+
+// ---------- map ----------
+let map, homeLayer, tripLayer, mapReady = false;
+function initMap(){
+  if (mapReady) return;
+  map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([-29, 25], 5);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 18
+  }).addTo(map);
+  homeLayer = L.layerGroup().addTo(map);
+  tripLayer = L.layerGroup().addTo(map);
+  mapReady = true;
+  setTimeout(() => map.invalidateSize(), 200);
+}
+const canvas = L.canvas({ padding: .3 });
+let lastPinCount = -1;
+function drawPins(pins){
+  if (pins.length === lastPinCount) return;   // homes change slowly; skip redraw when unchanged
+  lastPinCount = pins.length;
+  homeLayer.clearLayers();
+  for (const [lat, lng] of pins) {
+    L.circleMarker([lat, lng], { renderer: canvas, radius: 2, stroke: false, fillColor: '#7fb7ff', fillOpacity: .55 }).addTo(homeLayer);
+  }
+}
+const stateColour = s => s === 'red' ? '#ff4d4f' : s === 'amber' ? '#ffb020' : '#3ddc84';
+function drawTrips(trips){
+  tripLayer.clearLayers();
+  for (const t of trips) {
+    if (t.lat == null) continue;
+    const m = L.circleMarker([t.lat, t.lng], { radius: 9, color: '#fff', weight: 2, fillColor: stateColour(t.state), fillOpacity: 1 }).addTo(tripLayer);
+    m.bindPopup(`<b>${esc(t.name || '')}</b><br>${esc(t.dest || 'curfew')}<br>state: ${t.state}<br>last ping: ${ago(t.last)}`);
+  }
+}
+
+// ---------- numbers ----------
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num = n => Number(n).toLocaleString('en-ZA');
+function ago(iso){
+  if (!iso) return 'never';
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + ' min ago';
+  if (m < 48*60) return Math.round(m/60) + ' h ago';
+  return Math.round(m/1440) + ' days ago';
+}
+const card = (value, label, tone='') => `<div class="n ${tone}"><b>${num(value)}</b><span>${label}</span></div>`;
+
+function render(d){
+  const t = d.trips, m = d.members, w = d.whatsapp, p = d.payments;
+
+  $('stamp').textContent = 'as of ' + new Date(d.snapshot_at).toLocaleTimeString('en-ZA', {hour:'2-digit', minute:'2-digit'});
+
+  // attention banner: only when something actually needs Andre
+  const att = $('attention');
+  const reds = d.active_trips.filter(x => x.state === 'red');
+  const ambers = d.active_trips.filter(x => x.state === 'amber');
+  const offCrons = (d.crons || []).filter(c => !c.active).map(c => c.job);
+  if (reds.length) { att.className = ''; att.style.display = 'block'; att.textContent = `${reds.length} member${reds.length>1?'s':''} in RED: ${reds.map(x=>x.name).join(', ')}`; }
+  else if (ambers.length) { att.className = 'amber'; att.style.display = 'block'; att.textContent = `Amber hour: ${ambers.map(x=>x.name).join(', ')}`; }
+  else if (w.awaiting_reply > 0) { att.className = 'amber'; att.style.display = 'block'; att.textContent = `${w.awaiting_reply} WhatsApp conversation${w.awaiting_reply>1?'s':''} waiting for a reply`; }
+  else att.style.display = 'none';
+
+  $('trips').innerHTML =
+    card(t.active, 'travelling now', t.active ? 'good' : '') +
+    card(t.attention, 'need attention', t.attention ? 'bad' : '') +
+    card(t.completed_today, 'arrived safely today') +
+    card(t.completed_7d, 'arrived safely, 7 days');
+
+  $('members').innerHTML =
+    card(m.total, 'members in total') +
+    card(m.entry, 'eblockwatch Members') +
+    card(m.single, 'Premier Single') +
+    card(m.family, 'Premier Family') +
+    card(m.new_today, 'registered today', m.new_today ? 'good' : '') +
+    card(m.new_7d, 'registered, 7 days') +
+    card(m.with_home_pin, 'home pin on the map') +
+    card(m.with_ice, 'have a who-we-call contact', 'warn');
+
+  $('whatsapp').innerHTML =
+    card(w.in_today, 'messages in') +
+    card(w.out_today, 'messages out') +
+    card(w.awaiting_reply, 'waiting for a reply', w.awaiting_reply ? 'warn' : '');
+
+  $('money').innerHTML =
+    card(p.confirmed_today, 'confirmed today') +
+    card(p.confirmed_7d, 'confirmed, 7 days') +
+    card(p.stuck, 'stuck over 24 h', p.stuck ? 'bad' : '');
+
+  $('crons').innerHTML = (d.crons || []).map(c =>
+    `<div class="row"><span>${esc(c.job)} <small>${esc(c.schedule)}</small></span><span class="st ${c.active?'on':'off'}">${c.active ? 'running' : 'OFF'}</span></div>`
+  ).join('');
+
+  const tr = d.truth;
+  $('truth').textContent = `Self-checks last ran ${ago(tr.last_checked)} · ${tr.failing_blockers} launch-blocking check${tr.failing_blockers===1?'':'s'} failing`;
+  $('truth').style.color = (Date.now() - new Date(tr.last_checked)) > 6*3600e3 ? 'var(--amber)' : '';
+
+  initMap();
+  drawPins(d.pins || []);
+  drawTrips(d.active_trips || []);
+}
+
+async function load(){
+  const { data, error } = await sb.rpc('control_room');
+  if (error) {
+    $('stamp').textContent = 'could not read Supabase: ' + error.message;
+    $('stamp').className = 'stamp stale';
+    return;
+  }
+  $('stamp').className = 'stamp';
+  render(data);
+}
+function start(){
+  load();
+  clearInterval(timer);
+  timer = setInterval(load, REFRESH_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+}
+</script>
+</body>
+</html>

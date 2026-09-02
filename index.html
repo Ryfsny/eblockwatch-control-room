@@ -59,6 +59,21 @@
   footer{padding:0 16px 40px;color:var(--dim);font-size:14px;display:flex;justify-content:space-between;gap:12px}
   footer button{background:none;border:1px solid var(--line);color:var(--dim);padding:8px 12px;border-radius:8px}
   @media(prefers-reduced-motion:no-preference){ .n b{transition:color .3s} }
+  /* find a member */
+  .finder{display:grid;gap:8px;grid-template-columns:1fr}
+  @media(min-width:720px){.finder{grid-template-columns:2fr 1fr 1.2fr auto}}
+  .finder input,.finder select{padding:11px 12px;border-radius:8px;border:1px solid var(--line);background:var(--deck);color:var(--ink)}
+  .finder button{padding:11px 20px;border-radius:8px;border:0;background:var(--green);color:#08210f;font-weight:600}
+  #findMsg{color:var(--dim);font-size:14px;min-height:1.3em;margin:8px 0}
+  #results{display:grid;gap:6px;max-height:440px;overflow-y:auto}
+  .m{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:10px 14px;background:var(--deck);
+     border:0;border-left:3px solid var(--line);border-radius:8px;width:100%;text-align:left;color:inherit;cursor:pointer}
+  .m:hover,.m:focus-visible{border-left-color:var(--green);outline:none}
+  .m .who{font-weight:600}
+  .m .where{color:var(--dim);font-size:14px;grid-column:1}
+  .m .tags{color:var(--dim);font-size:13px;text-align:right;grid-row:1/3;align-self:center;line-height:1.5}
+  .m .tags b{color:var(--ink);font-variant-numeric:tabular-nums;display:block;font-size:17px}
+  .m.nowhere{opacity:.7}
 </style>
 </head>
 <body>
@@ -89,6 +104,29 @@
     <span><i style="background:var(--red)"></i>Red</span>
   </div>
   <main>
+    <section>
+      <h2>Find a member</h2>
+      <div class="finder">
+        <input id="q" type="search" placeholder="Name, phone number or email" autocomplete="off">
+        <select id="tier">
+          <option value="">Any membership</option>
+          <option value="paying">Paying members only</option>
+          <option value="entry">Entry level</option>
+          <option value="single">Single</option>
+          <option value="family">Family</option>
+        </select>
+        <select id="near">
+          <option value="">Anywhere in the country</option>
+          <option value="5">Within 5 km of the map</option>
+          <option value="20">Within 20 km of the map</option>
+          <option value="50">Within 50 km of the map</option>
+          <option value="150">Within 150 km of the map</option>
+        </select>
+        <button id="find" type="button">Search</button>
+      </div>
+      <div id="findMsg">Type a name, or move the map over an area and pick a distance.</div>
+      <div id="results"></div>
+    </section>
     <section>
       <h2>Trips right now</h2>
       <div class="grid" id="trips"></div>
@@ -247,6 +285,96 @@ function render(d){
   drawPins(d.pins || []);
   drawTrips(d.active_trips || []);
 }
+
+// ---------- find a member ----------
+const results = $('results'), findMsg = $('findMsg');
+let findSeq = 0, foundLayer = null;
+
+function memberRow(m, i){
+  const where = [];
+  if (m.suburb) where.push(esc(m.suburb));
+  if (m.tier) where.push(esc(m.tier));
+  if (m.located_how === 'nowhere') where.push('no location on file');
+  else if (m.located_how === 'suburb') where.push('placed by suburb only');
+
+  const tags = [];
+  if (m.km_away != null) tags.push(`<b>${m.km_away} km</b>`);
+  tags.push(m.reachable_on_whatsapp ? 'WhatsApp open' : (m.has_email ? 'email only' : 'no way in'));
+
+  return `<button class="m${m.located_how === 'nowhere' ? ' nowhere' : ''}" data-i="${i}">
+      <span class="who">${esc(m.name || 'no name on file')}</span>
+      <span class="tags">${tags.join('<br>')}</span>
+      <span class="where">${where.join(' · ') || '—'}</span>
+    </button>`;
+}
+
+let lastFound = [];
+async function findMembers(){
+  const seq = ++findSeq;
+  const text = $('q').value.trim();
+  const tier = $('tier').value;
+  const km   = $('near').value;
+
+  if (!text && !km && !tier) {
+    results.innerHTML = '';
+    findMsg.textContent = 'Type a name, or move the map over an area and pick a distance.';
+    return;
+  }
+  findMsg.textContent = 'Looking…';
+
+  const args = { in_text: text || null, in_tier: tier || null, in_limit: 300,
+                 in_lat: null, in_lng: null, in_radius_km: null };
+  if (km) {
+    const c = mapReady ? map.getCenter() : { lat: -26.05, lng: 28.04 };
+    args.in_lat = c.lat; args.in_lng = c.lng; args.in_radius_km = Number(km);
+  }
+
+  const { data, error } = await sb.rpc('control_room_members', args);
+  if (seq !== findSeq) return;
+
+  if (error) {
+    results.innerHTML = '';
+    findMsg.textContent = /not.*(exist|found)|schema cache|42883|PGRST202/i.test(error.message || '')
+      ? 'Member search is not switched on in the database yet.'
+      : /operator|42501|permission/i.test(error.message || '')
+        ? 'Your sign-in is not recognised as an operator.'
+        : 'Could not search: ' + error.message;
+    return;
+  }
+
+  lastFound = data || [];
+  findMsg.textContent = lastFound.length
+    ? `${num(lastFound.length)} member${lastFound.length === 1 ? '' : 's'}${lastFound.length === 300 ? ' (showing the first 300)' : ''}. Tap one to put it on the map.`
+    : 'Nobody matched that.';
+  results.innerHTML = lastFound.map(memberRow).join('');
+  showFound();
+}
+
+function showFound(){
+  if (!mapReady) return;
+  if (!foundLayer) foundLayer = L.layerGroup().addTo(map);
+  foundLayer.clearLayers();
+  for (const m of lastFound) {
+    if (m.lat == null || m.lng == null) continue;
+    L.circleMarker([m.lat, m.lng], { radius: 5, color: '#08210f', weight: 1, fillColor: '#3ddc84', fillOpacity: .95 })
+      .bindPopup(`<b>${esc(m.name || 'no name')}</b><br>${esc(m.suburb || '')}`)
+      .addTo(foundLayer);
+  }
+}
+
+results.addEventListener('click', e => {
+  const btn = e.target.closest('.m');
+  if (!btn) return;
+  const m = lastFound[Number(btn.dataset.i)];
+  if (!m || m.lat == null) { findMsg.textContent = 'No location on file for that member.'; return; }
+  map.setView([m.lat, m.lng], 14);
+  document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+$('find').addEventListener('click', findMembers);
+$('q').addEventListener('keydown', e => { if (e.key === 'Enter') findMembers(); });
+$('tier').addEventListener('change', findMembers);
+$('near').addEventListener('change', findMembers);
 
 async function load(){
   const { data, error } = await sb.rpc('control_room');

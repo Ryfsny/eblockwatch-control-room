@@ -17,7 +17,7 @@
     --green:#3ddc84;
     --amber:#ffb020;
     --red:#ff4d4f;
-    --home:#7fb7ff;
+    --home:#1d4ed8;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;background:var(--sky);color:var(--ink);font-family:Barlow,system-ui,sans-serif;font-size:16px;line-height:1.35}
@@ -39,8 +39,8 @@
   header .stamp.stale{color:var(--amber)}
   #attention{display:none;margin:0 16px 8px;padding:12px 14px;border-radius:8px;background:#3a1f22;border:1px solid var(--red);font-weight:500}
   #attention.amber{background:#3a2e14;border-color:var(--amber)}
-  #map{height:52vh;min-height:300px;background:#0d1721}
-  .leaflet-container{background:#0d1721;font:inherit}
+  #map{height:52vh;min-height:300px;background:#e7ebef}
+  .leaflet-container{background:#e7ebef;font:inherit}
   .key{display:flex;gap:16px;padding:8px 16px;color:var(--dim);font-size:14px;flex-wrap:wrap}
   .key i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
   main{padding:8px 16px 32px;display:grid;gap:24px}
@@ -153,8 +153,8 @@ let map, homeLayer, tripLayer, mapReady = false;
 function initMap(){
   if (mapReady) return;
   map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([-29, 25], 5);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 18
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Esri, HERE, Garmin, &copy; OpenStreetMap contributors', maxZoom: 16
   }).addTo(map);
   homeLayer = L.layerGroup().addTo(map);
   tripLayer = L.layerGroup().addTo(map);
@@ -168,7 +168,7 @@ function drawPins(pins){
   lastPinCount = pins.length;
   homeLayer.clearLayers();
   for (const [lat, lng] of pins) {
-    L.circleMarker([lat, lng], { renderer: canvas, radius: 2, stroke: false, fillColor: '#7fb7ff', fillOpacity: .55 }).addTo(homeLayer);
+    L.circleMarker([lat, lng], { renderer: canvas, radius: 2, stroke: false, fillColor: '#1d4ed8', fillOpacity: .45 }).addTo(homeLayer);
   }
 }
 const stateColour = s => s === 'red' ? '#ff4d4f' : s === 'amber' ? '#ffb020' : '#3ddc84';
@@ -176,7 +176,7 @@ function drawTrips(trips){
   tripLayer.clearLayers();
   for (const t of trips) {
     if (t.lat == null) continue;
-    const m = L.circleMarker([t.lat, t.lng], { radius: 9, color: '#fff', weight: 2, fillColor: stateColour(t.state), fillOpacity: 1 }).addTo(tripLayer);
+    const m = L.circleMarker([t.lat, t.lng], { radius: 9, color: '#0f172a', weight: 2, fillColor: stateColour(t.state), fillOpacity: 1 }).addTo(tripLayer);
     m.bindPopup(`<b>${esc(t.name || '')}</b><br>${esc(t.dest || 'curfew')}<br>state: ${t.state}<br>last ping: ${ago(t.last)}`);
   }
 }

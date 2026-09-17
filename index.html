@@ -81,10 +81,10 @@
 <div id="login">
   <form id="loginForm">
     <h1>eblockwatch control room</h1>
-    <p>Sign in with your eblockwatch operator account.</p>
-    <input id="email" type="email" autocomplete="username" placeholder="Email" value="ryfsny@gmail.com" required>
-    <input id="password" type="password" autocomplete="current-password" placeholder="Password">
-    <button type="submit">Sign in</button>
+    <p>Sign in the way your members do — a code on WhatsApp.</p>
+    <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="Your WhatsApp number" value="+27825611065" required>
+    <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code" style="display:none">
+    <button type="submit" id="go">Send me a code</button>
     <button type="button" class="alt" id="magic">Email me a sign-in link instead</button>
     <div class="msg" id="loginMsg"></div>
   </form>
@@ -167,16 +167,70 @@ const $ = id => document.getElementById(id);
 
 // ---------- auth ----------
 const loginMsg = $('loginMsg');
+
+// ── SIGNING IN WITH A WHATSAPP CODE ────────────────────────────────────────
+//
+// André, 17 September 2026:
+//   "What about the WhatsApp that's meant to send you a link like it used to
+//    do? You send a code by WhatsApp and open. Simple."
+//
+// He was locked out of his own control room for most of a day because the way
+// in ran through email, and Supabase's built-in mailer reported mail.send and a
+// 200 for a message that never arrived. A network that runs on WhatsApp should
+// not have its front door behind email.
+//
+// control-room-otp reuses backapp-api's request-otp / verify-otp — the same
+// code path members have used for weeks — and turns a verified code into a real
+// Supabase session. Operators only; the number is checked against
+// operator_profiles before a code is sent.
+//
+// Email is kept as the second option, not the first.
+
+const OTP_URL = SUPABASE_URL + '/functions/v1/control-room-otp';
+let awaitingCode = false;
+
+async function otp(payload) {
+  const r = await fetch(OTP_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return { status: r.status, body: await r.json().catch(() => ({})) };
+}
+
 $('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
-  loginMsg.textContent = 'Signing in…';
-  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
-  loginMsg.textContent = error ? error.message : '';
+  const phone = $('phone').value.trim();
+  if (!phone) { loginMsg.textContent = 'Give me your WhatsApp number.'; return; }
+
+  if (!awaitingCode) {
+    loginMsg.textContent = 'Sending your code…';
+    const { body } = await otp({ phone });
+    if (!body.sent) { loginMsg.textContent = body.error || 'Could not send the code.'; return; }
+    awaitingCode = true;
+    $('code').style.display = '';
+    $('code').focus();
+    $('go').textContent = 'Open the control room';
+    loginMsg.textContent = 'Check WhatsApp. The code lasts ten minutes.';
+    return;
+  }
+
+  const code = $('code').value.trim();
+  if (!code) { loginMsg.textContent = 'Type the six digits.'; return; }
+  loginMsg.textContent = 'Checking…';
+  const { body } = await otp({ phone, code });
+  if (!body.ok || !body.link) { loginMsg.textContent = body.error || 'That code did not work.'; return; }
+  loginMsg.textContent = 'Opening…';
+  location.href = body.link;   // signs in and lands back here
 });
+
 $('magic').addEventListener('click', async () => {
   loginMsg.textContent = 'Sending link…';
-  const { error } = await sb.auth.signInWithOtp({ email: $('email').value.trim(), options: { emailRedirectTo: location.href.split('#')[0] } });
-  loginMsg.textContent = error ? error.message : 'Link sent. Open it on this device.';
+  const { error } = await sb.auth.signInWithOtp({
+    email: 'ryfsny@gmail.com',
+    options: { emailRedirectTo: location.href.split('#')[0] },
+  });
+  loginMsg.textContent = error ? error.message : 'Link sent — check spam if it does not arrive.';
 });
 $('signout').addEventListener('click', () => sb.auth.signOut());
 

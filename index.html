@@ -43,6 +43,11 @@
   .leaflet-container{background:#e7ebef;font:inherit}
   .key{display:flex;gap:16px;padding:8px 16px;color:var(--dim);font-size:14px;flex-wrap:wrap}
   .key i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .key .fresh{align-items:center;gap:6px}
+  .key .fresh label{display:flex;align-items:center;gap:6px;cursor:pointer}
+  .key .fresh select{background:var(--deck);color:var(--ink);border:1px solid var(--line);
+    border-radius:6px;padding:2px 6px;font:inherit;font-size:13px}
+  .key .fresh b{color:#ff7a00;font-variant-numeric:tabular-nums}
   main{padding:8px 16px 32px;display:grid;gap:24px}
   section h2{font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-weight:500;font-size:15px;color:var(--dim);margin-bottom:8px}
   .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
@@ -102,6 +107,16 @@
     <span><i style="background:var(--green)"></i>Travelling, fine</span>
     <span><i style="background:var(--amber)"></i>Amber hour</span>
     <span><i style="background:var(--red)"></i>Red</span>
+    <span class="fresh"><i style="background:#ff7a00"></i>
+      <label><input type="checkbox" id="showNew" checked> Joined in the last
+        <select id="newHours">
+          <option value="24">24 hours</option>
+          <option value="48" selected>48 hours</option>
+          <option value="168">7 days</option>
+        </select>
+      </label>
+      <b id="newCount"></b>
+    </span>
   </div>
   <main>
     <section>
@@ -241,7 +256,7 @@ sb.auth.onAuthStateChange((_ev, session) => {
 });
 
 // ---------- map ----------
-let map, homeLayer, tripLayer, mapReady = false;
+let map, homeLayer, newLayer, tripLayer, mapReady = false;
 function initMap(){
   if (mapReady) return;
   map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([-29, 25], 5);
@@ -249,6 +264,7 @@ function initMap(){
     attribution: 'Esri, HERE, Garmin, &copy; OpenStreetMap contributors', maxZoom: 16
   }).addTo(map);
   homeLayer = L.layerGroup().addTo(map);
+  newLayer  = L.layerGroup().addTo(map);
   tripLayer = L.layerGroup().addTo(map);
   mapReady = true;
   setTimeout(() => map.invalidateSize(), 200);
@@ -338,7 +354,52 @@ function render(d){
   initMap();
   drawPins(d.pins || []);
   drawTrips(d.active_trips || []);
+  loadNew();
 }
+
+// ── WHO JUST ARRIVED ────────────────────────────────────────────────────────
+//
+// André, 18 September 2026: "Can we take all the people who have registered in
+// the last 48 hours and see them in the situation room map."
+//
+// Every home pin is the same blue, so 65,000 members and the 300 who arrived
+// since Tuesday looked identical. These are drawn on top in orange, bigger,
+// newest brightest — so a campaign landing is something he can watch rather
+// than something he has to be told about. Click one and it says who, when, and
+// what they still owe.
+async function loadNew(){
+  if (!$('showNew').checked) { if (newLayer) newLayer.clearLayers(); $('newCount').textContent = ''; return; }
+  const hours = +$('newHours').value || 48;
+  const { data, error } = await sb.rpc('recent_members', { in_hours: hours });
+  if (error || !data) return;
+
+  $('newCount').textContent = `${num(data.with_pin)} on the map of ${num(data.joined)}`;
+  if (!newLayer) return;
+  newLayer.clearLayers();
+
+  const now = Date.now();
+  for (const p of (data.pins || [])) {
+    if (p.lat == null || p.lng == null) continue;
+    // Newer members burn brighter; a pin from ten minutes ago should not look
+    // the same as one from yesterday morning.
+    const ageH = Math.max(0, (now - new Date(p.at)) / 3600e3);
+    const heat = Math.max(0.25, 1 - ageH / hours);
+    L.circleMarker([p.lat, p.lng], {
+      radius: 4 + 4 * heat,
+      color: '#7c2d00', weight: 1,
+      fillColor: '#ff7a00', fillOpacity: 0.35 + 0.6 * heat,
+    })
+      .bindPopup(
+        `<b>${esc(p.who)}</b><br>${esc(p.number || '')}<br>` +
+        `joined ${ago(p.at)}` +
+        (p.missing ? `<br><span style="color:#b45309">still needs: ${esc(p.missing)}</span>` : '<br>complete')
+      )
+      .addTo(newLayer);
+  }
+}
+
+$('showNew').addEventListener('change', loadNew);
+$('newHours').addEventListener('change', loadNew);
 
 // ---------- find a member ----------
 const results = $('results'), findMsg = $('findMsg');

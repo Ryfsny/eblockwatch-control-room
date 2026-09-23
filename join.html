@@ -105,6 +105,7 @@
           $("formCard").hidden = true; $("doneCard").hidden = false; window.scrollTo(0,0);
           return;
         }
+        if (r.status>=500){ await new Promise(function(ok){setTimeout(ok,1500*(i+1))}); continue; }
         if (r.status!==409) return fail("Something went wrong. Please try again in a minute.");
       }catch(x){ return fail("No connection. Please check your signal and try again."); }
     }

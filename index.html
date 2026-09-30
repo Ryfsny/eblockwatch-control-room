@@ -89,6 +89,7 @@
   .seg button.on{background:var(--brand);color:#fff}
   .row{padding:5px 0;border-bottom:1px dashed var(--line);font-size:13.5px;cursor:pointer}
   .row:last-child{border-bottom:0}
+  .send textarea{width:100%;padding:8px;border:2px solid var(--free);border-radius:8px;font:inherit;margin-top:8px;resize:vertical}
   .tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:2px solid var(--line);margin:4px 0 0;position:sticky;top:0;background:#fff;z-index:2}
   .tabs button{border:0;background:none;padding:7px 10px;color:var(--mute);border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap}
   .tabs button.on{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
@@ -137,7 +138,9 @@ const KEY = "sb_publishable_5EPYvLIERZ4ZzQ1-R3WU6Q_NDIz_egj";
 const OTP = SUPABASE_URL + "/functions/v1/control-room-otp";
 const sb = supabase.createClient(SUPABASE_URL, KEY);
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// Some old member names were saved twice-encoded ("NaudÃ©" instead of "Naudé"). Show them the way they were typed.
+const fixText = (s) => { s = String(s ?? ""); if (!/[ÃÂ]/.test(s)) return s; try { return decodeURIComponent(escape(s)); } catch { return s; } };
+const esc = (s) => fixText(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmtN = (n) => (n == null ? "–" : Number(n).toLocaleString("en-ZA"));
 const tz = { timeZone: "Africa/Johannesburg" };
 function ago(t) {
@@ -181,9 +184,10 @@ $("signout").onclick = async () => { await sb.auth.signOut(); location.reload();
 let map, pinLayer, resultLayer, tripLayer, trailLayer;
 function initMap() {
   map = L.map("map", { preferCanvas: true }).setView([-26.1, 28.05], 10);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-    maxZoom: 19, subdomains: "abcd",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  // Clean street map. CARTO now demands an API key (30 Sep 2026), so OpenStreetMap's own free tiles are used.
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
   pinLayer = L.layerGroup(); // off by default: 65k dots bury the map
   tripLayer = L.layerGroup().addTo(map);
@@ -360,7 +364,11 @@ async function showTab(t) {
   }
   if (t === "whatsapp") {
     h = `<div class="sec"><div class="convo" id="convo">${p.messages.length ? p.messages.map((m) => `<div class="bub ${m.dir === "inbound" ? "in" : "out"}">${esc(m.text || "(photo or pin)")}<small>${m.dir === "inbound" ? first : "us"} · ${esc(when(m.at))}</small></div>`).join("") : '<div class="mute">No WhatsApps on record.</div>'}</div>
-      <div class="note">${free ? "Free WhatsApp: a message from us now will arrive." : "Not Free WhatsApp: they have not written in 24 hours, so only an approved template can go."} Sending from this page is the next build.</div>
+      ${free && !c.opted_out_at ? `<div class="send">
+        <textarea id="msg" rows="3" maxlength="1400" placeholder="Type your message to ${first}…"></textarea>
+        <div class="mute">It goes from the eblockwatch WhatsApp number and ends with "Press 0 — Main menu". Their reply comes back here.</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button class="btn primary" id="sendBtn">Send</button><button class="btn" id="sendNo" style="display:none">Cancel</button><span class="mute" id="sendMsg"></span></div>
+      </div>` : `<div class="note">${c.opted_out_at ? "This member opted out. We do not message them." : "Not Free WhatsApp: " + first + " has not written in 24 hours, so a normal message can't go. Only an approved template can (not built yet)."}</div>`}
       <div class="mute">Showing the last ${p.messages.length} messages.</div></div>`;
   }
   if (t === "app") {
@@ -416,7 +424,33 @@ async function showTab(t) {
   $("mbody").querySelectorAll(".row[data-z]").forEach((r) => (r.onclick = () => { const z = p.safe_zones[Number(r.dataset.z)]; if (z.lat) { showMapView(); map.setView([z.lat, z.lng], 16); } }));
   $("mbody").querySelectorAll(".row[data-home]").forEach((r) => (r.onclick = () => { showMapView(); map.setView([c.home_lat, c.home_lng], 16); }));
   $("mbody").querySelectorAll(".row[data-latest]").forEach((r) => (r.onclick = () => { showMapView(); map.setView([APP.last.lat, APP.last.lng], 16); }));
+  wireSend(c, first);
   const ds = $("days"); if (ds) ds.querySelectorAll("button").forEach((b) => (b.onclick = () => openMember(c.id, Number(b.dataset.d), "where")));
+}
+// Send one WhatsApp to this member. Two taps: Send, then confirm. The server re-checks every rule.
+function wireSend(c, first) {
+  const btn = $("sendBtn"); if (!btn) return;
+  let armed = false;
+  const reset = () => { armed = false; btn.textContent = "Send"; $("sendNo").style.display = "none"; };
+  $("sendNo").onclick = () => { reset(); $("sendMsg").textContent = ""; };
+  $("msg").oninput = () => { if (armed) reset(); };
+  btn.onclick = async () => {
+    const text = $("msg").value.trim();
+    if (!text) { $("sendMsg").textContent = "Type a message first."; return; }
+    if (!armed) { armed = true; btn.textContent = `Yes, send to ${fixText(first)} now`; $("sendNo").style.display = ""; $("sendMsg").textContent = "Check it once more."; return; }
+    btn.disabled = true; $("sendMsg").textContent = "Sending…";
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      const r = await fetch(SUPABASE_URL + "/functions/v1/cr-send", {
+        method: "POST",
+        headers: { "content-type": "application/json", apikey: KEY, authorization: "Bearer " + (session?.access_token || "") },
+        body: JSON.stringify({ member_id: c.id, text }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok) { $("sendMsg").textContent = "Sent."; setTimeout(() => openMember(c.id, current.days, "whatsapp"), 800); }
+      else { $("sendMsg").textContent = j.error || "It did not go. Try again."; btn.disabled = false; reset(); }
+    } catch { $("sendMsg").textContent = "No connection. It did not go."; btn.disabled = false; reset(); }
+  };
 }
 function drawTrail(p) {
   showMapView();

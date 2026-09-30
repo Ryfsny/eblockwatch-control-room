@@ -2,511 +2,544 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>eblockwatch control room</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eblockwatch Control Room</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- eblockwatch control room v3 — 30 Sep 2026.
+     Andre: "type them in on the screen, and it comes up on the screen with my results."
+     Andre: "interrogate one member… where he's been for the last month, his breadcrumbs, who his members are,
+             communicate with him, what the CRM says — all on my page."
+     One screen. Type → list + map. Tap a person → their whole file: CRM, trail on the map, trips, people,
+     safe zones, WhatsApp conversation, payments. Operators only; every list and every file opened is logged. -->
 <style>
-  :root{
-    --sky:#16232f;      /* base */
-    --deck:#1f2f3d;     /* panels */
-    --line:#33475a;
-    --ink:#e9eef3;
-    --dim:#9fb0c0;
-    --green:#3ddc84;
-    --amber:#ffb020;
-    --red:#ff4d4f;
-    --home:#1d4ed8;
+  :root{--bg:#f4f6f8;--card:#fff;--ink:#16202a;--mute:#5d6b78;--line:#dde3e8;--brand:#0b5cad;
+        --green:#1f9d55;--amber:#d98200;--red:#d0342c;--free:#0a8f6a}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+  button{font:inherit;cursor:pointer}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 12px}
+  .btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .btn.on{background:#e3eefa;border-color:var(--brand)}
+  #login{max-width:360px;margin:12vh auto;background:#fff;padding:24px;border-radius:12px;border:1px solid var(--line)}
+  #login h2{margin:0 0 6px}
+  #login input{width:100%;padding:10px;margin:8px 0;border:1px solid var(--line);border-radius:8px;font:inherit}
+  #loginMsg{color:var(--mute);min-height:20px}
+
+  #app{display:none;height:100vh;flex-direction:column}
+  header{display:flex;align-items:center;gap:10px;padding:8px 16px;background:#fff;border-bottom:1px solid var(--line)}
+  header h1{font-size:16px;margin:0;white-space:nowrap}
+  #ask{flex:1;display:flex;gap:8px}
+  #ask input{flex:1;padding:10px 14px;border:2px solid var(--brand);border-radius:10px;font:inherit;font-size:16px;min-width:0}
+  header small{color:var(--mute);white-space:nowrap}
+  #understood{padding:4px 16px 0;font-size:13px;color:var(--mute);min-height:22px;background:#fff}
+  #quick{display:flex;gap:6px;overflow-x:auto;padding:6px 16px 8px;white-space:nowrap;border-bottom:1px solid var(--line);background:#fff}
+  .q{border:1px solid var(--line);background:#fff;border-radius:18px;padding:4px 12px;flex:none}
+  .q b{margin-right:4px}
+  .q:hover{border-color:var(--brand)}
+  .q.warn b{color:var(--red)} .q.free b{color:var(--free)} .q.good b{color:var(--green)}
+  main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(340px,460px) 1fr}
+  main.full{grid-template-columns:1fr} main.full #mapWrap{display:none}
+  #side{display:flex;flex-direction:column;min-height:0;background:#fff;border-right:1px solid var(--line)}
+  #listHead{padding:10px 14px 6px;display:flex;gap:8px;align-items:flex-start}
+  #listHead .t{flex:1}
+  #listHead h2{font-size:16px;margin:0}
+  #listCount{color:var(--mute);font-size:13px}
+  #list{flex:1;overflow:auto;padding:0 10px 10px}
+  main.full #list{columns:3 360px;column-gap:16px}
+  main.full .item{break-inside:avoid}
+  #mapWrap{position:relative}
+  #map{height:100%;min-height:300px}
+  @media(max-width:860px){
+    header{flex-wrap:wrap} #ask{order:3;flex-basis:100%}
+    main{grid-template-columns:1fr;grid-template-rows:42vh 1fr}
+    #mapWrap{order:-1}
   }
-  *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%;background:var(--sky);color:var(--ink);font-family:Barlow,system-ui,sans-serif;font-size:16px;line-height:1.35}
-  button,input{font:inherit}
-  /* login */
-  #login{position:fixed;inset:0;display:grid;place-items:center;background:var(--sky);z-index:20;padding:24px}
-  #login form{width:100%;max-width:360px;display:grid;gap:12px}
-  #login h1{font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-weight:600;font-size:28px;letter-spacing:.01em}
-  #login p{color:var(--dim)}
-  #login input{padding:14px;border-radius:8px;border:1px solid var(--line);background:var(--deck);color:var(--ink)}
-  #login button{padding:14px;border-radius:8px;border:0;background:var(--green);color:#08210f;font-weight:600}
-  #login .alt{background:transparent;color:var(--dim);border:1px solid var(--line)}
-  #login .msg{min-height:1.4em;color:var(--amber)}
-  /* app */
-  #app{display:none;min-height:100%;grid-template-rows:auto 1fr;}
-  header{display:flex;align-items:baseline;justify-content:space-between;padding:12px 16px 8px;gap:12px}
-  header h1{font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-weight:600;font-size:22px}
-  header .stamp{color:var(--dim);font-size:14px}
-  header .stamp.stale{color:var(--amber)}
-  #attention{display:none;margin:0 16px 8px;padding:12px 14px;border-radius:8px;background:#3a1f22;border:1px solid var(--red);font-weight:500}
-  #attention.amber{background:#3a2e14;border-color:var(--amber)}
-  #map{height:52vh;min-height:300px;background:#e7ebef}
-  .leaflet-container{background:#e7ebef;font:inherit}
-  .key{display:flex;gap:16px;padding:8px 16px;color:var(--dim);font-size:14px;flex-wrap:wrap}
-  .key i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
-  .key .fresh{align-items:center;gap:6px}
-  .key .fresh label{display:flex;align-items:center;gap:6px;cursor:pointer}
-  .key .fresh select{background:var(--deck);color:var(--ink);border:1px solid var(--line);
-    border-radius:6px;padding:2px 6px;font:inherit;font-size:13px}
-  .key .fresh b{color:#ff7a00;font-variant-numeric:tabular-nums}
-  main{padding:8px 16px 32px;display:grid;gap:24px}
-  section h2{font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-weight:500;font-size:15px;color:var(--dim);margin-bottom:8px}
-  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-  @media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)} #map{height:60vh}}
-  .n{background:var(--deck);border-radius:10px;padding:12px 14px;border-left:3px solid var(--line)}
-  .n b{display:block;font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-size:32px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
-  .n span{display:block;color:var(--dim);font-size:14px;margin-top:6px}
-  .n.good{border-left-color:var(--green)} .n.warn{border-left-color:var(--amber)} .n.bad{border-left-color:var(--red)}
-  .list{display:grid;gap:6px}
-  .row{display:flex;justify-content:space-between;gap:12px;padding:10px 14px;background:var(--deck);border-radius:8px}
-  .row .st{font-weight:500}
-  .row .st.off{color:var(--red)} .row .st.on{color:var(--green)}
-  .row small{color:var(--dim)}
-  footer{padding:0 16px 40px;color:var(--dim);font-size:14px;display:flex;justify-content:space-between;gap:12px}
-  footer button{background:none;border:1px solid var(--line);color:var(--dim);padding:8px 12px;border-radius:8px}
-  @media(prefers-reduced-motion:no-preference){ .n b{transition:color .3s} }
-  /* find a member */
-  .finder{display:grid;gap:8px;grid-template-columns:1fr}
-  @media(min-width:720px){.finder{grid-template-columns:2fr 1fr 1.2fr auto}}
-  .finder input,.finder select{padding:11px 12px;border-radius:8px;border:1px solid var(--line);background:var(--deck);color:var(--ink)}
-  .finder button{padding:11px 20px;border-radius:8px;border:0;background:var(--green);color:#08210f;font-weight:600}
-  #findMsg{color:var(--dim);font-size:14px;min-height:1.3em;margin:8px 0}
-  #results{display:grid;gap:6px;max-height:440px;overflow-y:auto}
-  .m{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:10px 14px;background:var(--deck);
-     border:0;border-left:3px solid var(--line);border-radius:8px;width:100%;text-align:left;color:inherit;cursor:pointer}
-  .m:hover,.m:focus-visible{border-left-color:var(--green);outline:none}
-  .m .who{font-weight:600}
-  .m .where{color:var(--dim);font-size:14px;grid-column:1}
-  .m .tags{color:var(--dim);font-size:13px;text-align:right;grid-row:1/3;align-self:center;line-height:1.5}
-  .m .tags b{color:var(--ink);font-variant-numeric:tabular-nums;display:block;font-size:17px}
-  .m.nowhere{opacity:.7}
+  .item{padding:8px 6px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:6px}
+  .item:hover{background:#f0f5fb}
+  .item.sel{background:#e3eefa}
+  .item .n{font-weight:600}
+  .item .m{color:var(--mute);font-size:13px}
+  .chip{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:10px;margin:2px 4px 0 0;background:#eef2f5;color:#334}
+  .chip.free{background:#dcf5ec;color:var(--free)} .chip.app{background:#e3eefa;color:var(--brand)}
+  .chip.red{background:#fde3e1;color:var(--red)} .chip.amber{background:#fff0d6;color:var(--amber)}
+  .chip.green{background:#dff3e6;color:var(--green)}
+  .mgroup{margin:10px 0 4px;font-weight:600}
+  .mach{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+  .dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex:none}
+  .dot.ok{background:var(--green)} .dot.bad{background:var(--red)}
+  .mute{color:var(--mute);font-size:13px}
+  .note{background:#fff8e6;border:1px solid #f1dfae;border-radius:8px;padding:8px;font-size:13px;margin:6px 0}
+  .help{font-size:13.5px}
+  .help code{background:#eef2f5;padding:2px 7px;border-radius:6px;cursor:pointer;display:inline-block;margin:2px}
+  /* member file */
+  .sec{border-top:1px solid var(--line);padding:8px 0}
+  .sec h4{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute)}
+  .kv{display:grid;grid-template-columns:120px 1fr;gap:2px 8px;font-size:13.5px}
+  .kv div:nth-child(odd){color:var(--mute)}
+  .convo{max-height:340px;overflow:auto;background:#f6f8fa;border-radius:8px;padding:8px}
+  .bub{max-width:85%;padding:6px 9px;border-radius:10px;margin:4px 0;font-size:13.5px;white-space:pre-wrap;word-wrap:break-word}
+  .bub.in{background:#fff;border:1px solid var(--line)}
+  .bub.out{background:#dcf5ec;margin-left:auto}
+  .bub small{display:block;color:var(--mute);font-size:11px;margin-top:2px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{border:0;background:#fff;padding:4px 10px}
+  .seg button.on{background:var(--brand);color:#fff}
+  .row{padding:5px 0;border-bottom:1px dashed var(--line);font-size:13.5px;cursor:pointer}
+  .row:last-child{border-bottom:0}
+  .tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:2px solid var(--line);margin:4px 0 0;position:sticky;top:0;background:#fff;z-index:2}
+  .tabs button{border:0;background:none;padding:7px 10px;color:var(--mute);border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap}
+  .tabs button.on{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
 </style>
 </head>
 <body>
 
 <div id="login">
+  <h2>Control room</h2>
+  <p class="mute">Operators only. We send a code to your WhatsApp.</p>
   <form id="loginForm">
-    <h1>eblockwatch control room</h1>
-    <p>Sign in the way your members do — a code on WhatsApp.</p>
-    <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="Your WhatsApp number" value="+27825611065" required>
-    <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code" style="display:none">
-    <button type="submit" id="go">Send me a code</button>
-    <button type="button" class="alt" id="magic">Email me a sign-in link instead</button>
-    <div class="msg" id="loginMsg"></div>
+    <input id="phone" placeholder="Your WhatsApp number, e.g. 082 561 1065" autocomplete="tel">
+    <input id="code" placeholder="Code from WhatsApp" inputmode="numeric" style="display:none">
+    <button class="btn primary" id="go" type="submit">Send me a code</button>
   </form>
+  <p id="loginMsg"></p>
 </div>
 
 <div id="app">
   <header>
-    <h1>Control room</h1>
-    <div class="stamp" id="stamp">loading…</div>
+    <h1>eblockwatch Control Room</h1>
+    <form id="ask">
+      <input id="say" placeholder='Type who you want: "members", "Sandton with app", "free whatsapp", "Andre", 0825611065' autocomplete="off">
+      <button class="btn primary" type="submit">Show</button>
+    </form>
+    <small id="stamp"></small>
+    <button class="btn" id="signout">Sign out</button>
   </header>
-  <div id="attention"></div>
-  <div id="map"></div>
-  <div class="key">
-    <span><i style="background:var(--home)"></i>Member at home</span>
-    <span><i style="background:var(--green)"></i>Travelling, fine</span>
-    <span><i style="background:var(--amber)"></i>Amber hour</span>
-    <span><i style="background:var(--red)"></i>Red</span>
-    <span class="fresh"><i style="background:#ff7a00"></i>
-      <label><input type="checkbox" id="showNew" checked> Joined in the last
-        <select id="newHours">
-          <option value="24">24 hours</option>
-          <option value="48" selected>48 hours</option>
-          <option value="168">7 days</option>
-        </select>
-      </label>
-      <b id="newCount"></b>
-    </span>
-  </div>
-  <main>
-    <section>
-      <h2>Find a member</h2>
-      <div class="finder">
-        <input id="q" type="search" placeholder="Name, phone number or email" autocomplete="off">
-        <select id="tier">
-          <option value="">Any membership</option>
-          <option value="paying">Paying members only</option>
-          <option value="entry">Entry level</option>
-          <option value="single">Single</option>
-          <option value="family">Family</option>
-        </select>
-        <select id="near">
-          <option value="">Anywhere in the country</option>
-          <option value="5">Within 5 km of the map</option>
-          <option value="20">Within 20 km of the map</option>
-          <option value="50">Within 50 km of the map</option>
-          <option value="150">Within 150 km of the map</option>
-        </select>
-        <button id="find" type="button">Search</button>
+  <div id="understood"></div>
+  <div id="quick"></div>
+  <main id="main">
+    <section id="side">
+      <div id="listHead">
+        <div class="t"><h2 id="listTitle">Type above, or tap a number</h2><div id="listCount"></div></div>
+        <button class="btn" id="viewBtn" title="Switch between list with map, and the full list">Full list</button>
       </div>
-      <div id="findMsg">Type a name, or move the map over an area and pick a distance.</div>
-      <div id="results"></div>
+      <div id="list"></div>
     </section>
-    <section>
-      <h2>Trips right now</h2>
-      <div class="grid" id="trips"></div>
-    </section>
-    <section>
-      <h2>Members</h2>
-      <div class="grid" id="members"></div>
-    </section>
-    <section>
-      <h2>WhatsApp today</h2>
-      <div class="grid" id="whatsapp"></div>
-    </section>
-    <section>
-      <h2>Money</h2>
-      <div class="grid" id="money"></div>
-    </section>
-    <section>
-      <h2>Machines that should be running</h2>
-      <div class="list" id="crons"></div>
-    </section>
+    <section id="mapWrap"><div id="map"></div></section>
   </main>
-  <footer>
-    <span id="truth"></span>
-    <button id="signout">Sign out</button>
-  </footer>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script type="module">
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-const SUPABASE_URL = 'https://dymtsrhhjwtwbkzpdwhz.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_5EPYvLIERZ4ZzQ1-R3WU6Q_NDIz_egj';
-const REFRESH_MS = 60_000;
-
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
-const $ = id => document.getElementById(id);
-
-// ---------- auth ----------
-const loginMsg = $('loginMsg');
-
-// ── SIGNING IN WITH A WHATSAPP CODE ────────────────────────────────────────
-//
-// André, 17 September 2026:
-//   "What about the WhatsApp that's meant to send you a link like it used to
-//    do? You send a code by WhatsApp and open. Simple."
-//
-// He was locked out of his own control room for most of a day because the way
-// in ran through email, and Supabase's built-in mailer reported mail.send and a
-// 200 for a message that never arrived. A network that runs on WhatsApp should
-// not have its front door behind email.
-//
-// control-room-otp reuses backapp-api's request-otp / verify-otp — the same
-// code path members have used for weeks — and turns a verified code into a real
-// Supabase session. Operators only; the number is checked against
-// operator_profiles before a code is sent.
-//
-// Email is kept as the second option, not the first.
-
-const OTP_URL = SUPABASE_URL + '/functions/v1/control-room-otp';
-let awaitingCode = false;
-
-async function otp(payload) {
-  const r = await fetch(OTP_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  return { status: r.status, body: await r.json().catch(() => ({})) };
+<script>
+const SUPABASE_URL = "https://dymtsrhhjwtwbkzpdwhz.supabase.co";
+const KEY = "sb_publishable_5EPYvLIERZ4ZzQ1-R3WU6Q_NDIz_egj";
+const OTP = SUPABASE_URL + "/functions/v1/control-room-otp";
+const sb = supabase.createClient(SUPABASE_URL, KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtN = (n) => (n == null ? "–" : Number(n).toLocaleString("en-ZA"));
+const tz = { timeZone: "Africa/Johannesburg" };
+function ago(t) {
+  if (!t) return "never";
+  const s = (Date.now() - new Date(t).getTime()) / 1000;
+  if (s < 90) return "just now";
+  if (s < 3600) return Math.round(s / 60) + " min ago";
+  if (s < 86400) return Math.round(s / 3600) + " h ago";
+  if (s < 86400 * 30) return Math.round(s / 86400) + " days ago";
+  return new Date(t).toLocaleDateString("en-ZA", tz);
 }
+const clock = (t) => t ? new Date(t).toLocaleTimeString("en-ZA", { ...tz, hour: "2-digit", minute: "2-digit" }) : "";
+const when = (t) => t ? new Date(t).toLocaleString("en-ZA", { ...tz, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+const tripTo = (d) => (d === "__curfew__" ? "Gauntlet Run" : d || "trip");
 
-$('loginForm').addEventListener('submit', async e => {
+/* ---------- sign in ---------- */
+let codeSent = false;
+$("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const phone = $('phone').value.trim();
-  if (!phone) { loginMsg.textContent = 'Give me your WhatsApp number.'; return; }
-
-  if (!awaitingCode) {
-    loginMsg.textContent = 'Sending your code…';
-    const { body } = await otp({ phone });
-    if (!body.sent) { loginMsg.textContent = body.error || 'Could not send the code.'; return; }
-    awaitingCode = true;
-    $('code').style.display = '';
-    $('code').focus();
-    $('go').textContent = 'Open the control room';
-    loginMsg.textContent = 'Check WhatsApp. The code lasts ten minutes.';
-    return;
-  }
-
-  const code = $('code').value.trim();
-  if (!code) { loginMsg.textContent = 'Type the six digits.'; return; }
-  loginMsg.textContent = 'Checking…';
-  const { body } = await otp({ phone, code });
-  if (!body.ok || !body.link) { loginMsg.textContent = body.error || 'That code did not work.'; return; }
-  loginMsg.textContent = 'Opening…';
-  location.href = body.link;   // signs in and lands back here
+  const phone = $("phone").value.trim();
+  if (!phone) return;
+  $("go").disabled = true;
+  $("loginMsg").textContent = codeSent ? "Checking the code…" : "Sending the code…";
+  try {
+    const body = codeSent ? { phone, code: $("code").value.trim() } : { phone };
+    const r = await fetch(OTP, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const j = await r.json();
+    if (!codeSent && j.sent) {
+      codeSent = true; $("code").style.display = "block"; $("code").focus();
+      $("go").textContent = "Open the control room";
+      $("loginMsg").textContent = "Code sent to your WhatsApp.";
+    } else if (codeSent && j.ok && j.link) {
+      $("loginMsg").textContent = "Opening…"; location.href = j.link;
+    } else $("loginMsg").textContent = j.error || "That did not work. Try again.";
+  } catch { $("loginMsg").textContent = "No connection. Try again."; }
+  $("go").disabled = false;
 });
+$("signout").onclick = async () => { await sb.auth.signOut(); location.reload(); };
 
-$('magic').addEventListener('click', async () => {
-  loginMsg.textContent = 'Sending link…';
-  const { error } = await sb.auth.signInWithOtp({
-    email: 'ryfsny@gmail.com',
-    options: { emailRedirectTo: location.href.split('#')[0] },
-  });
-  loginMsg.textContent = error ? error.message : 'Link sent — check spam if it does not arrive.';
-});
-$('signout').addEventListener('click', () => sb.auth.signOut());
-
-let timer = null;
-sb.auth.onAuthStateChange((_ev, session) => {
-  if (session) { $('login').style.display = 'none'; $('app').style.display = 'grid'; start(); }
-  else { $('login').style.display = 'grid'; $('app').style.display = 'none'; clearInterval(timer); }
-});
-
-// ---------- map ----------
-let map, homeLayer, newLayer, tripLayer, mapReady = false;
-function initMap(){
-  if (mapReady) return;
-  map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([-29, 25], 5);
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-    attribution: 'Esri, HERE, Garmin, &copy; OpenStreetMap contributors', maxZoom: 16
+/* ---------- map (clean light street map) ---------- */
+let map, pinLayer, resultLayer, tripLayer, trailLayer;
+function initMap() {
+  map = L.map("map", { preferCanvas: true }).setView([-26.1, 28.05], 10);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+    maxZoom: 19, subdomains: "abcd",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
   }).addTo(map);
-  homeLayer = L.layerGroup().addTo(map);
-  newLayer  = L.layerGroup().addTo(map);
+  pinLayer = L.layerGroup(); // off by default: 65k dots bury the map
   tripLayer = L.layerGroup().addTo(map);
-  mapReady = true;
-  setTimeout(() => map.invalidateSize(), 200);
+  resultLayer = L.featureGroup().addTo(map);
+  trailLayer = L.featureGroup().addTo(map);
+  L.control.layers(null, { "Live trips": tripLayer, "Your list": resultLayer, "Member trail": trailLayer, "All member homes (grey)": pinLayer }, { collapsed: true }).addTo(map);
 }
-const canvas = L.canvas({ padding: .3 });
-let lastPinCount = -1;
-function drawPins(pins){
-  if (pins.length === lastPinCount) return;   // homes change slowly; skip redraw when unchanged
-  lastPinCount = pins.length;
-  homeLayer.clearLayers();
-  for (const [lat, lng] of pins) {
-    L.circleMarker([lat, lng], { renderer: canvas, radius: 2, stroke: false, fillColor: '#1d4ed8', fillOpacity: .45 }).addTo(homeLayer);
+const stateColour = (s) => (s === "red" ? "#d0342c" : s === "amber" ? "#d98200" : "#1f9d55");
+
+/* ---------- view: list + map, or the full list ---------- */
+$("viewBtn").onclick = () => {
+  const full = $("main").classList.toggle("full");
+  $("viewBtn").textContent = full ? "Show map" : "Full list";
+  if (!full) setTimeout(() => map.invalidateSize(), 50);
+};
+function showMapView() { if ($("main").classList.contains("full")) $("viewBtn").click(); }
+
+/* ---------- typing → search ---------- */
+const RULES = [
+  [/\bfree\s*whats\s*app\b|\bfree\b/, { wrote: "free" }, "Free WhatsApp (wrote in the last 24 h)"],
+  [/\b(waiting|awaiting)( for (a|our) reply)?\b/, { wrote: "awaiting" }, "waiting for our reply"],
+  [/\bwrote today\b/, { wrote: "today" }, "wrote today"],
+  [/\bnever wrote\b|\bnever written\b/, { wrote: "never" }, "never wrote to us"],
+  [/\b(no|without)( the)? (back\s*app|apps?)\b/, { app: "no" }, "no BackApp"],
+  [/\b(back\s*app|apps?)\b/, { app: "yes" }, "has the BackApp"],
+  [/\bsignal today\b|\bpinged today\b/, { ping: "today" }, "phone signal today"],
+  [/\bsingle\b/, { tier: "single" }, "Single members"],
+  [/\bfamily\b/, { tier: "family" }, "Family members"],
+  [/\bentry\b/, { tier: "entry" }, "Entry members"],
+  [/\b(need(s)? attention|attention|amber|red)\b/, { state: "attention" }, "trip needs attention"],
+  [/\broaming\b/, { state: "roaming" }, "roaming"],
+  [/\barrived today\b/, { state: "arrived_today" }, "arrived safely today"],
+  [/\barrived\b/, { state: "arrived_7d" }, "arrived safely in 7 days"],
+  [/\b(travelling|traveling|on a trip|trips?)\b/, { state: "travelling" }, "travelling now"],
+  [/\b(no|without)( a)? home pin\b|\bno pin\b/, { home: "no" }, "no home pin"],
+  [/\bhome pin\b/, { home: "yes" }, "has a home pin"],
+  [/\b(no|without)( an?)? (emergency contacts?|ice)\b/, { ice: "no" }, "no emergency contact"],
+  [/\b(emergency contacts?|ice)\b/, { ice: "yes" }, "has an emergency contact"],
+  [/\b(joined|new|registered) today\b/, { joined: "today" }, "joined today"],
+  [/\b(joined|new|registered)( this week| in 7 days| 7 days)?\b/, { joined: "7d" }, "joined in 7 days"],
+  [/\b(here|on the map|this area|in view)\b/, { box: true }, "only the area on the map"],
+];
+const STOP = /\b(show|me|all|names?|them|those|there|the|who|with|has|have|had|and|members?|people|everyone|everybody|that|are|is|a|an|of|list|find|for|please)\b/g;
+
+function parse(text) {
+  let t = " " + text.toLowerCase().trim() + " ";
+  const f = {}, said = [];
+  const digits = t.replace(/\D/g, "");
+  if (digits.length >= 9 && /^[\s\d+()-]+$/.test(text.trim())) { f.q = text.trim(); said.push("phone " + text.trim()); return { f, said }; }
+  for (const [re, add, label] of RULES) if (re.test(t)) { Object.assign(f, add); said.push(label); t = t.replace(re, " "); }
+  const inPlace = t.match(/\b(?:in|at|near|around|from)\s+([a-z][a-z .'-]+)/);
+  if (inPlace) { const p = inPlace[1].replace(STOP, " ").replace(/\s+/g, " ").trim(); if (p) { f.place = p; said.push("in " + p); } t = t.replace(inPlace[0], " "); }
+  const rest = t.replace(STOP, " ").replace(/\s+/g, " ").trim();
+  if (rest) { f.any = rest; said.push(`name or place "${rest}"`); }
+  if (!said.length && /\b(members?|everyone|everybody|all)\b/.test(text.toLowerCase())) said.push("all members");
+  return { f, said };
+}
+
+$("ask").addEventListener("submit", (e) => { e.preventDefault(); ask($("say").value); });
+let keepView = false;
+function ask(text, title) {
+  $("say").value = text;
+  const { f, said } = parse(text);
+  if (!said.length) { $("understood").textContent = ""; return showHelp(); }
+  $("understood").innerHTML = "Looking for: <b>" + said.map(esc).join(" · ") + "</b>";
+  keepView = false;
+  if (f.box) { delete f.box; const b = map.getBounds(); Object.assign(f, { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() }); keepView = true; }
+  runList(f, title || text);
+}
+function showHelp() {
+  $("listTitle").textContent = "What can I type?";
+  $("listCount").textContent = "";
+  const ex = ["members", "travelling", "free whatsapp", "Sandton with app", "single in Bryanston", "joined today", "no home pin in Randburg", "app here", "Andre", "0825611065"];
+  $("list").innerHTML = `<div class="help"><p>Type in plain words and mix them. Tap an example:</p><p>${ex.map((x) => `<code>${esc(x)}</code>`).join(" ")}</p>
+    <p class="mute">Words I know: members, app, free WhatsApp, waiting, travelling, attention, roaming, arrived, single, family, entry, home pin, emergency contact, joined today, new, here (only the area on the map), in &lt;place&gt;. Anything else is a name or a place.</p>
+    <p class="mute">Tap any person to open their file: CRM, where they have been, trips, their people, safe zones, WhatsApp conversation and payments.</p></div>`;
+  $("list").querySelectorAll("code").forEach((c) => (c.onclick = () => ask(c.textContent)));
+}
+
+/* ---------- list ↔ map ---------- */
+let rowsNow = [], markers = [], lastList = null;
+async function runList(f, title) {
+  lastList = { f, title };
+  trailLayer.clearLayers();
+  $("listTitle").textContent = title;
+  $("listCount").textContent = "Looking…"; $("list").innerHTML = "";
+  const { data, error } = await sb.rpc("cr_list", { p_kind: "search", p_f: f });
+  if (error) { $("listCount").textContent = ""; $("list").innerHTML = `<div class="note">Could not load: ${esc(error.message)}</div>`; return; }
+  rowsNow = data.rows || [];
+  $("listCount").textContent = data.total > data.shown
+    ? `${fmtN(data.total)} members — showing the ${fmtN(data.shown)} most recently active. Add a place or a word to narrow it.`
+    : `${fmtN(data.total)} member${data.total === 1 ? "" : "s"}`;
+  if (!rowsNow.length) $("list").innerHTML = `<div class="note">Nobody matches. Try fewer words.</div>`;
+  else drawList();
+  drawResultsOnMap();
+}
+function chips(r) {
+  const c = [];
+  if (r.last_wrote && Date.now() - new Date(r.last_wrote) < 864e5) c.push(`<span class="chip free">Free WhatsApp</span>`);
+  if (r.last_ping) c.push(`<span class="chip app">BackApp · signal ${esc(ago(r.last_ping))}</span>`);
+  if (r.trip_status === "active") {
+    const cls = r.trip_state === "red" ? "red" : r.trip_state === "amber" ? "amber" : "green";
+    c.push(`<span class="chip ${cls}">On a trip: ${esc(tripTo(r.trip_to))}${r.trip_eta ? " · due " + esc(clock(r.trip_eta)) : ""}</span>`);
+  } else if (r.trip_status === "completed") c.push(`<span class="chip green">Arrived ${esc(ago(r.done_at))}</span>`);
+  if (r.tier && r.tier !== "entry") c.push(`<span class="chip">${esc(r.tier[0].toUpperCase() + r.tier.slice(1))}</span>`);
+  if (!r.has_home) c.push(`<span class="chip">No home pin</span>`);
+  if (r.has_ice) c.push(`<span class="chip">Emergency contact</span>`);
+  return c.join("");
+}
+function drawList() {
+  $("list").innerHTML = rowsNow.map((r, i) => `
+    <div class="item" data-i="${i}">
+      <div class="n">${esc(r.name)}</div>
+      <div class="m">${esc(r.phone || "")}${r.area ? " · " + esc(r.area) : ""} · joined ${esc(ago(r.joined))}${r.last_wrote ? " · last wrote " + esc(ago(r.last_wrote)) : ""}</div>
+      <div>${chips(r)}</div>
+    </div>`).join("");
+  $("list").querySelectorAll(".item").forEach((d) => (d.onclick = () => openMember(rowsNow[Number(d.dataset.i)].id)));
+}
+function drawResultsOnMap() {
+  resultLayer.clearLayers(); markers = [];
+  rowsNow.forEach((r, i) => {
+    if (r.lat == null || r.lng == null) { markers[i] = null; return; }
+    const col = r.trip_status === "active" ? stateColour(r.trip_state) : "#0b5cad";
+    const m = L.circleMarker([r.lat, r.lng], { radius: 8, color: "#fff", weight: 2, fillColor: col, fillOpacity: 1 })
+      .bindTooltip(esc(r.name)).on("click", () => openMember(r.id));
+    m.addTo(resultLayer); markers[i] = m;
+  });
+  if (markers.some(Boolean) && !keepView) map.fitBounds(resultLayer.getBounds().pad(0.2), { maxZoom: 15 });
+}
+
+/* ---------- one member's file: tabs, dive in one at a time ---------- */
+let current = null, P = null, APP = null;
+const TABS = [["overview", "Overview"], ["whatsapp", "WhatsApp"], ["app", "App"], ["where", "Where"], ["trips", "Trips"], ["people", "People"], ["money", "Money"]];
+async function openMember(id, days = 30, tab = "overview") {
+  current = { id, days, tab };
+  $("listTitle").textContent = "Opening the file…"; $("listCount").textContent = ""; $("list").innerHTML = "";
+  const { data: p, error } = await sb.rpc("cr_member", { p_id: id, p_days: days });
+  if (error || !p) { $("list").innerHTML = `<div class="note">Could not open: ${esc(error?.message || "not found")}</div>`; return; }
+  P = p; APP = null;
+  const c = p.crm, free = p.last_wrote && Date.now() - new Date(p.last_wrote) < 864e5;
+  $("listTitle").innerHTML = `<button class="btn" id="back">← Back to the list</button>`;
+  $("back").onclick = backToList;
+  $("list").innerHTML = `<div class="sec" style="border-top:0"><div style="font-size:19px;font-weight:700">${esc(c.name)}</div>
+    <div class="m">${esc(c.phone || "")}${c.email ? " · " + esc(c.email) : ""}</div>
+    <div>${free ? '<span class="chip free">Free WhatsApp — wrote ' + esc(ago(p.last_wrote)) + "</span>" : `<span class="chip">Last wrote ${esc(ago(p.last_wrote))}</span>`}
+    <span class="chip">${esc((c.tier || "entry").replace(/^./, (x) => x.toUpperCase()))}</span>
+    ${c.opted_out_at ? '<span class="chip red">Opted out ' + esc(ago(c.opted_out_at)) + "</span>" : ""}</div></div>
+    <div class="tabs" id="tabs">${TABS.map(([k, l]) => `<button data-t="${k}">${l}</button>`).join("")}</div>
+    <div id="mbody"></div>`;
+  $("tabs").querySelectorAll("button").forEach((b) => (b.onclick = () => showTab(b.dataset.t)));
+  drawTrail(p);
+  showTab(tab);
+}
+async function showTab(t) {
+  current.tab = t;
+  $("tabs").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.t === t));
+  const p = P, c = p.crm, first = esc(c.name.split(" ")[0]);
+  const free = p.last_wrote && Date.now() - new Date(p.last_wrote) < 864e5;
+  const kv = (k, v) => (v || v === 0 ? `<div>${esc(k)}</div><div>${esc(v)}</div>` : "");
+  const go = (tab, text) => `<div class="row" data-go="${tab}">${text} <span class="mute">→</span></div>`;
+  let h = "";
+  if (t === "overview") {
+    h = `<div class="sec"><h4>At a glance</h4>
+      ${go("whatsapp", `${p.messages.length ? "Last WhatsApp " + esc(ago(p.messages[p.messages.length - 1].at)) : "No WhatsApps on record"}${free ? " · <b style='color:var(--free)'>Free WhatsApp</b>" : ""}`)}
+      ${go("app", p.crumbs.length ? `BackApp: ${fmtN(p.crumbs.length)} positions in ${p.days} days, latest ${esc(ago(p.crumbs[p.crumbs.length - 1][2]))}` : "BackApp: no signal in this period")}
+      ${go("trips", `${p.trips.length} trips in ${p.days} days${p.trips.some((x) => x.status === "active") ? " · <b>on the way now</b>" : ""}`)}
+      ${go("people", `${p.ice.length} emergency contact${p.ice.length === 1 ? "" : "s"} · ${p.circle.length} in their circle`)}
+      ${go("where", `${p.safe_zones.length} safe zone${p.safe_zones.length === 1 ? "" : "s"} · ${c.home_lat ? "home pin set" : "no home pin"}`)}
+      ${go("money", `${p.payments.length} payment${p.payments.length === 1 ? "" : "s"}${c.cover_until ? " · cover until " + esc(when(c.cover_until)) : ""}`)}</div>
+      <div class="sec"><h4>What the CRM says</h4><div class="kv">
+      ${kv("Joined", when(c.joined))}${kv("Last seen", c.last_seen ? ago(c.last_seen) : "")}${kv("Source", c.source)}
+      ${kv("Membership", c.membership_status)}${kv("Home", c.address || (c.home_lat ? "pin only" : "no home pin"))}
+      ${kv("Vehicle", c.vehicle)}${kv("Emergency", c.emergency_contact)}${kv("Notes", c.notes)}</div></div>`;
   }
+  if (t === "whatsapp") {
+    h = `<div class="sec"><div class="convo" id="convo">${p.messages.length ? p.messages.map((m) => `<div class="bub ${m.dir === "inbound" ? "in" : "out"}">${esc(m.text || "(photo or pin)")}<small>${m.dir === "inbound" ? first : "us"} · ${esc(when(m.at))}</small></div>`).join("") : '<div class="mute">No WhatsApps on record.</div>'}</div>
+      <div class="note">${free ? "Free WhatsApp: a message from us now will arrive." : "Not Free WhatsApp: they have not written in 24 hours, so only an approved template can go."} Sending from this page is the next build.</div>
+      <div class="mute">Showing the last ${p.messages.length} messages.</div></div>`;
+  }
+  if (t === "app") {
+    h = `<div class="sec"><div class="mute">Loading what the app is doing…</div></div>`;
+    $("mbody").innerHTML = h;
+    if (!APP) { const r = await sb.rpc("cr_member_app", { p_id: c.id }); APP = r.data || { has_app: false }; }
+    if (current.tab !== "app") return;
+    const a = APP, L_ = a.last || {};
+    if (!a.has_app) h = `<div class="sec"><div class="note">${first} does not have the BackApp yet — no signal has ever come from it.</div></div>`;
+    else {
+      const bits = [L_.battery != null ? `battery ${L_.battery}%${L_.charging ? " (charging)" : ""}` : "", L_.accuracy_m != null ? `accurate to ${Math.round(L_.accuracy_m)} m` : "",
+                    L_.speed != null ? `speed ${Math.round(L_.speed * 3.6)} km/h` : "", L_.activity || ""].filter(Boolean).join(" · ");
+      h = `<div class="sec"><h4>Signals from the app</h4><div class="kv">
+        ${kv("Latest", when(L_.at) + " (" + ago(L_.at) + ")")}${bits ? kv("Phone", bits) : ""}
+        ${kv("Today", fmtN(a.pings_today))}${kv("7 days", fmtN(a.pings_7d))}${kv("30 days", fmtN(a.pings_30d))}
+        ${kv("Since first use", fmtN(a.pings_all) + " since " + when(a.first_ping))}
+        ${kv("Roaming, 30 days", fmtN(a.roaming_30d) + " times")}${kv("Shakes, 30 days", fmtN(a.shakes_30d))}</div>
+        ${L_.lat ? `<div class="row" data-latest="1">Show the latest position on the map <span class="mute">→</span></div>` : ""}</div>
+        <div class="sec"><h4>Day by day (14 days)</h4>
+        ${(a.days || []).map((d) => `<div class="row" style="cursor:default"><b>${esc(new Date(d.day).toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" }))}</b> · ${fmtN(d.pings)} signals${d.moved ? " · moved" : ""}${d.min_battery != null ? " · lowest battery " + d.min_battery + "%" : ""}</div>`).join("") || '<div class="mute">No signals in 14 days.</div>'}
+        <div class="mute" style="margin-top:6px">A day with 0 signals is missing from the list: the phone was off, or the app was closed.</div></div>`;
+    }
+  }
+  if (t === "where") {
+    const n = p.crumbs.length;
+    h = `<div class="sec"><h4>Their path on the map</h4>
+      <div class="seg" id="days">${[1, 7, 30, 90].map((d) => `<button data-d="${d}" class="${d === p.days ? "on" : ""}">${d === 1 ? "24 h" : d + " days"}</button>`).join("")}</div>
+      <div class="mute" style="margin-top:4px">${n ? `${fmtN(n)} points, ${esc(when(p.crumbs[0][2]))} to ${esc(when(p.crumbs[n - 1][2]))}. Blue line = path, green = start, red = latest, black = home, green rings = safe zones.` : "No phone signal in this period."}</div></div>
+      <div class="sec"><h4>Safe zones (${p.safe_zones.length})</h4>
+      ${p.safe_zones.map((z, i) => `<div class="row" data-z="${i}">${esc(z.label || "Saved place")}${z.address ? " · " + esc(z.address) : ""}${z.visits ? " · " + z.visits + " visits" : ""} <span class="mute">→</span></div>`).join("") || '<div class="mute">None yet.</div>'}
+      ${c.home_lat ? `<div class="row" data-home="1">Home${c.address ? " · " + esc(c.address) : ""} <span class="mute">→</span></div>` : ""}</div>`;
+  }
+  if (t === "trips") {
+    h = `<div class="sec"><h4>Trips in ${p.days === 1 ? "24 hours" : p.days + " days"} (${p.trips.length})</h4>
+      ${p.trips.map((x) => `<div class="row" style="cursor:default"><span class="dot" style="display:inline-block;margin:0 6px 0 0;background:${stateColour(x.state)}"></span>${esc(tripTo(x.to))} · ${esc(when(x.opened))} · ${x.status === "active" ? "<b>on the way now</b>" : x.closed ? "done " + esc(clock(x.closed)) : esc(x.status)}</div>`).join("") || '<div class="mute">No trips.</div>'}
+      <div class="mute" style="margin-top:6px">Change the period on the Where tab.</div></div>`;
+  }
+  if (t === "people") {
+    h = `<div class="sec"><h4>Emergency contacts</h4>
+      ${p.ice.map((i) => `<div class="row" style="cursor:default">${esc(i.name || "No name")} · ${esc(i.relationship || "emergency contact")} · ${esc(i.phone || "")}</div>`).join("") || '<div class="mute">None yet.</div>'}</div>
+      <div class="sec"><h4>Their circle (tap to open)</h4>
+      ${p.circle.map((o) => `<div class="row" data-id="${esc(o.id)}">${esc(o.name)} · ${esc(o.why)} · ${esc(o.phone || "")} <span class="mute">→</span></div>`).join("") || '<div class="mute">No family circle or sponsored members.</div>'}</div>`;
+  }
+  if (t === "money") {
+    h = `<div class="sec"><h4>Payments</h4>
+      ${p.payments.map((x) => `<div class="row" style="cursor:default">${esc(when(x.at))} · ${esc(x.plan || "")} · R${esc(x.amount ?? "")} · ${esc(x.status || "")}</div>`).join("") || '<div class="mute">No payments.</div>'}
+      ${c.cover_until ? `<div class="mute">Cover until ${esc(when(c.cover_until))}</div>` : ""}</div>`;
+  }
+  $("mbody").innerHTML = h;
+  const cv = $("convo"); if (cv) cv.scrollTop = cv.scrollHeight;
+  $("mbody").querySelectorAll(".row[data-go]").forEach((r) => (r.onclick = () => showTab(r.dataset.go)));
+  $("mbody").querySelectorAll(".row[data-id]").forEach((r) => (r.onclick = () => openMember(r.dataset.id)));
+  $("mbody").querySelectorAll(".row[data-z]").forEach((r) => (r.onclick = () => { const z = p.safe_zones[Number(r.dataset.z)]; if (z.lat) { showMapView(); map.setView([z.lat, z.lng], 16); } }));
+  $("mbody").querySelectorAll(".row[data-home]").forEach((r) => (r.onclick = () => { showMapView(); map.setView([c.home_lat, c.home_lng], 16); }));
+  $("mbody").querySelectorAll(".row[data-latest]").forEach((r) => (r.onclick = () => { showMapView(); map.setView([APP.last.lat, APP.last.lng], 16); }));
+  const ds = $("days"); if (ds) ds.querySelectorAll("button").forEach((b) => (b.onclick = () => openMember(c.id, Number(b.dataset.d), "where")));
 }
-const stateColour = s => s === 'red' ? '#ff4d4f' : s === 'amber' ? '#ffb020' : '#3ddc84';
-function drawTrips(trips){
+function drawTrail(p) {
+  showMapView();
+  resultLayer.clearLayers(); trailLayer.clearLayers();
+  const c = p.crm;
+  if (c.home_lat) L.circleMarker([c.home_lat, c.home_lng], { radius: 9, color: "#fff", weight: 2, fillColor: "#16202a", fillOpacity: 1 }).bindTooltip("Home").addTo(trailLayer);
+  for (const z of p.safe_zones) if (z.lat) L.circle([z.lat, z.lng], { radius: 150, color: "#1f9d55", weight: 1, fillOpacity: 0.12 }).bindTooltip("Safe zone: " + esc(z.label || "")).addTo(trailLayer);
+  const pts = p.crumbs.map((x) => [x[0], x[1]]);
+  if (pts.length) {
+    L.polyline(pts, { color: "#0b5cad", weight: 3, opacity: 0.7 }).addTo(trailLayer);
+    p.crumbs.forEach((x, i) => { if (i % 12 === 0) L.circleMarker([x[0], x[1]], { radius: 3, stroke: false, fillColor: "#0b5cad", fillOpacity: 0.8 }).bindTooltip(esc(when(x[2]))).addTo(trailLayer); });
+    L.circleMarker(pts[0], { radius: 7, color: "#fff", weight: 2, fillColor: "#1f9d55", fillOpacity: 1 }).bindTooltip("Start " + esc(when(p.crumbs[0][2]))).addTo(trailLayer);
+    L.circleMarker(pts[pts.length - 1], { radius: 9, color: "#fff", weight: 2, fillColor: "#d0342c", fillOpacity: 1 }).bindTooltip("Latest " + esc(when(p.crumbs[pts.length - 1][2]))).addTo(trailLayer);
+  }
+  if (trailLayer.getLayers().length) map.fitBounds(trailLayer.getBounds().pad(0.15), { maxZoom: 16 });
+}
+function backToList() {
+  trailLayer.clearLayers();
+  if (lastList) runList(lastList.f, lastList.title); else showHelp();
+}
+
+/* ---------- shortcuts across the top (they type into the same box) ---------- */
+let snap = null, extra = {};
+function drawQuick() {
+  const s = snap || {}, m = s.members || {}, t = s.trips || {}, w = s.whatsapp || {}, p = s.payments || {};
+  const Q = [
+    ["members", "members", m.total],
+    ["travelling", "travelling now", t.active],
+    ["attention", "need attention", t.attention, "warn"],
+    ["#esc", "open escalations", s.escalations?.open, "warn"],
+    ["free whatsapp", "Free WhatsApp", extra.free, "free"],
+    ["waiting", "waiting for our reply", w.awaiting_reply],
+    ["arrived today", "arrived today", t.completed_today, "good"],
+    ["joined today", "joined today", m.new_today],
+    ["new", "joined, 7 days", m.new_7d],
+    ["app", "have the BackApp", extra.app],
+    ["single", "Single", m.single],
+    ["family", "Family", m.family],
+    ["emergency contact", "have emergency contact", m.with_ice],
+    ["#money", "memberships confirmed, 7 days", p.confirmed_7d],
+    ["#machines", "machines working", extra.mach ? `${extra.mach.healthy}/${extra.mach.total}` : null, extra.mach && extra.mach.healthy < extra.mach.total ? "warn" : "good"],
+  ];
+  $("quick").innerHTML = Q.map(([k, label, v, cls]) =>
+    `<button class="q ${cls || ""}" data-k="${esc(k)}" data-l="${esc(label)}"><b>${esc(typeof v === "string" ? v : fmtN(v))}</b>${esc(label)}</button>`).join("");
+  $("quick").querySelectorAll(".q").forEach((b) => (b.onclick = () => {
+    const k = b.dataset.k;
+    if (k === "#esc") return showEscalations();
+    if (k === "#machines") return showMachines();
+    if (k === "#money") return showMoney();
+    ask(k, b.dataset.l.replace(/^./, (x) => x.toUpperCase()));
+  }));
+}
+function panel(title, count, html) {
+  $("understood").textContent = ""; $("listTitle").textContent = title; $("listCount").textContent = count; $("list").innerHTML = html;
+}
+function showEscalations() {
+  const rec = snap?.escalations?.recent || [];
+  panel("Open escalations", `${fmtN(snap?.escalations?.open)} open — a person must close each one`,
+    rec.map((e) => `<div class="item" data-n="${esc(e.name || "")}"><div class="n">${esc(e.name || "Unknown")}</div>
+      <div class="m">${esc((e.action || "").replace(/_/g, " "))} · started ${esc(ago(e.triggered_at))} · ${e.response_received ? "they replied" : "no reply yet"}</div></div>`).join(""));
+  $("list").querySelectorAll(".item[data-n]").forEach((d) => (d.onclick = () => d.dataset.n && ask(d.dataset.n)));
+}
+function showMoney() {
+  const p = snap?.payments || {};
+  panel("Money", "", `<div class="item"><div class="n">${fmtN(p.confirmed_today)} confirmed today · ${fmtN(p.confirmed_7d)} in 7 days</div></div>
+    <div class="item"><div class="n">${fmtN(p.stuck)} stuck</div><div class="m">A payment not yet linked to a member by email or phone. It needs a person.</div></div>`);
+}
+async function showMachines() {
+  panel("Machines", "Loading…", "");
+  const { data, error } = await sb.rpc("cr_machines");
+  if (error) return panel("Machines", "", `<div class="note">Could not load: ${esc(error.message)}</div>`);
+  extra.mach = { healthy: data.healthy, total: data.total }; drawQuick();
+  let h = `<div class="note">These run by themselves, day and night. Green = working. Red = failed in the last 24 hours; tell Claude.</div>`, g = "";
+  for (const r of data.rows || []) {
+    if (r.group !== g) { g = r.group; h += `<div class="mgroup">${esc(g)}</div>`; }
+    h += `<div class="mach"><div class="dot ${r.ok ? "ok" : "bad"}"></div><div><b>${esc(r.label)}</b>
+      <div class="mute">${esc(r.what)}${r.what ? " · " : ""}last ran ${esc(ago(r.last_run))}${r.fails_24h ? ` · <span style="color:var(--red)">${r.fails_24h} failures today</span>` : ""}</div></div></div>`;
+  }
+  panel("Machines", `${data.healthy} of ${data.total} working`, h);
+}
+
+/* ---------- loading the numbers ---------- */
+let pinsDrawn = false;
+async function load() {
+  const { data, error } = await sb.rpc("control_room");
+  if (error) { $("stamp").textContent = "Could not load: " + error.message; return; }
+  snap = data;
+  $("stamp").textContent = "Updated " + clock(data.snapshot_at || new Date());
+  const [fw, ba, mc] = await Promise.all([
+    sb.rpc("cr_list", { p_kind: "free_whatsapp", p_f: {} }),
+    sb.rpc("cr_list", { p_kind: "backapp", p_f: {} }),
+    sb.rpc("cr_machines"),
+  ]);
+  extra.free = fw.data?.total ?? null;
+  extra.app = ba.data?.total ?? null;
+  extra.mach = mc.data ? { healthy: mc.data.healthy, total: mc.data.total } : null;
+  drawQuick();
   tripLayer.clearLayers();
-  for (const t of trips) {
+  for (const t of data.active_trips || []) {
     if (t.lat == null) continue;
-    const m = L.circleMarker([t.lat, t.lng], { radius: 9, color: '#0f172a', weight: 2, fillColor: stateColour(t.state), fillOpacity: 1 }).addTo(tripLayer);
-    m.bindPopup(`<b>${esc(t.name || '')}</b><br>${esc(t.dest || 'curfew')}<br>state: ${t.state}<br>last ping: ${ago(t.last)}`);
+    L.circleMarker([t.lat, t.lng], { radius: 10, color: "#fff", weight: 3, fillColor: stateColour(t.state), fillOpacity: 1 })
+      .bindTooltip(`${esc(t.name)} — on a trip: ${esc(tripTo(t.dest))}${t.eta ? ", due " + esc(clock(t.eta)) : ""} · signal ${esc(ago(t.last))}`)
+      .on("click", () => ask(t.name, "Travelling: " + t.name))
+      .addTo(tripLayer);
+  }
+  if (!pinsDrawn && Array.isArray(data.pins)) {
+    const r = L.canvas({ padding: 0.5 });
+    for (const p of data.pins) L.circleMarker(p, { renderer: r, radius: 1.5, stroke: false, fillColor: "#8795a1", fillOpacity: 0.45, interactive: false }).addTo(pinLayer);
+    pinsDrawn = true;
   }
 }
 
-// ---------- numbers ----------
-const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const num = n => Number(n).toLocaleString('en-ZA');
-function ago(iso){
-  if (!iso) return 'never';
-  const m = Math.round((Date.now() - new Date(iso)) / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return m + ' min ago';
-  if (m < 48*60) return Math.round(m/60) + ' h ago';
-  return Math.round(m/1440) + ' days ago';
+/* ---------- start ---------- */
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return;
+  $("login").style.display = "none"; $("app").style.display = "flex";
+  initMap(); drawQuick(); showHelp(); $("say").focus();
+  await load();
+  setInterval(() => { if (document.visibilityState === "visible") load(); }, 120000);
 }
-const card = (value, label, tone='') => `<div class="n ${tone}"><b>${num(value)}</b><span>${label}</span></div>`;
-
-function render(d){
-  const t = d.trips, m = d.members, w = d.whatsapp, p = d.payments;
-
-  $('stamp').textContent = 'as of ' + new Date(d.snapshot_at).toLocaleTimeString('en-ZA', {hour:'2-digit', minute:'2-digit'});
-
-  // attention banner: only when something actually needs Andre
-  const att = $('attention');
-  const reds = d.active_trips.filter(x => x.state === 'red');
-  const ambers = d.active_trips.filter(x => x.state === 'amber');
-  const offCrons = (d.crons || []).filter(c => !c.active).map(c => c.job);
-  if (reds.length) { att.className = ''; att.style.display = 'block'; att.textContent = `${reds.length} member${reds.length>1?'s':''} in RED: ${reds.map(x=>x.name).join(', ')}`; }
-  else if (ambers.length) { att.className = 'amber'; att.style.display = 'block'; att.textContent = `Amber hour: ${ambers.map(x=>x.name).join(', ')}`; }
-  else if (w.awaiting_reply > 0) { att.className = 'amber'; att.style.display = 'block'; att.textContent = `${w.awaiting_reply} WhatsApp conversation${w.awaiting_reply>1?'s':''} waiting for a reply`; }
-  else att.style.display = 'none';
-
-  $('trips').innerHTML =
-    card(t.active, 'travelling now', t.active ? 'good' : '') +
-    card(t.attention, 'need attention', t.attention ? 'bad' : '') +
-    card(t.completed_today, 'arrived safely today') +
-    card(t.completed_7d, 'arrived safely, 7 days');
-
-  $('members').innerHTML =
-    card(m.total, 'members in total') +
-    card(m.entry, 'eblockwatch Members') +
-    card(m.single, 'Premier Single') +
-    card(m.family, 'Premier Family') +
-    card(m.new_today, 'registered today', m.new_today ? 'good' : '') +
-    card(m.new_7d, 'registered, 7 days') +
-    card(m.with_home_pin, 'home pin on the map') +
-    card(m.with_ice, 'have a who-we-call contact', 'warn');
-
-  $('whatsapp').innerHTML =
-    card(w.in_today, 'messages in') +
-    card(w.out_today, 'messages out') +
-    card(w.awaiting_reply, 'waiting for a reply', w.awaiting_reply ? 'warn' : '');
-
-  $('money').innerHTML =
-    card(p.confirmed_today, 'confirmed today') +
-    card(p.confirmed_7d, 'confirmed, 7 days') +
-    card(p.stuck, 'stuck over 24 h', p.stuck ? 'bad' : '');
-
-  $('crons').innerHTML = (d.crons || []).map(c =>
-    `<div class="row"><span>${esc(c.job)} <small>${esc(c.schedule)}</small></span><span class="st ${c.active?'on':'off'}">${c.active ? 'running' : 'OFF'}</span></div>`
-  ).join('');
-
-  const tr = d.truth;
-  $('truth').textContent = `Self-checks last ran ${ago(tr.last_checked)} · ${tr.failing_blockers} launch-blocking check${tr.failing_blockers===1?'':'s'} failing`;
-  $('truth').style.color = (Date.now() - new Date(tr.last_checked)) > 6*3600e3 ? 'var(--amber)' : '';
-
-  initMap();
-  drawPins(d.pins || []);
-  drawTrips(d.active_trips || []);
-  loadNew();
-}
-
-// ── WHO JUST ARRIVED ────────────────────────────────────────────────────────
-//
-// André, 18 September 2026: "Can we take all the people who have registered in
-// the last 48 hours and see them in the situation room map."
-//
-// Every home pin is the same blue, so 65,000 members and the 300 who arrived
-// since Tuesday looked identical. These are drawn on top in orange, bigger,
-// newest brightest — so a campaign landing is something he can watch rather
-// than something he has to be told about. Click one and it says who, when, and
-// what they still owe.
-async function loadNew(){
-  if (!$('showNew').checked) { if (newLayer) newLayer.clearLayers(); $('newCount').textContent = ''; return; }
-  const hours = +$('newHours').value || 48;
-  const { data, error } = await sb.rpc('recent_members', { in_hours: hours });
-  if (error || !data) return;
-
-  $('newCount').textContent = `${num(data.with_pin)} on the map of ${num(data.joined)}`;
-  if (!newLayer) return;
-  newLayer.clearLayers();
-
-  const now = Date.now();
-  for (const p of (data.pins || [])) {
-    if (p.lat == null || p.lng == null) continue;
-    // Newer members burn brighter; a pin from ten minutes ago should not look
-    // the same as one from yesterday morning.
-    const ageH = Math.max(0, (now - new Date(p.at)) / 3600e3);
-    const heat = Math.max(0.25, 1 - ageH / hours);
-    L.circleMarker([p.lat, p.lng], {
-      radius: 4 + 4 * heat,
-      color: '#7c2d00', weight: 1,
-      fillColor: '#ff7a00', fillOpacity: 0.35 + 0.6 * heat,
-    })
-      .bindPopup(
-        `<b>${esc(p.who)}</b><br>${esc(p.number || '')}<br>` +
-        `joined ${ago(p.at)}` +
-        (p.missing ? `<br><span style="color:#b45309">still needs: ${esc(p.missing)}</span>` : '<br>complete')
-      )
-      .addTo(newLayer);
-  }
-}
-
-$('showNew').addEventListener('change', loadNew);
-$('newHours').addEventListener('change', loadNew);
-
-// ---------- find a member ----------
-const results = $('results'), findMsg = $('findMsg');
-let findSeq = 0, foundLayer = null;
-
-function memberRow(m, i){
-  const where = [];
-  if (m.suburb) where.push(esc(m.suburb));
-  if (m.tier) where.push(esc(m.tier));
-  if (m.located_how === 'nowhere') where.push('no location on file');
-  else if (m.located_how === 'suburb') where.push('placed by suburb only');
-
-  const tags = [];
-  if (m.km_away != null) tags.push(`<b>${m.km_away} km</b>`);
-  tags.push(m.reachable_on_whatsapp ? 'WhatsApp open' : (m.has_email ? 'email only' : 'no way in'));
-
-  return `<button class="m${m.located_how === 'nowhere' ? ' nowhere' : ''}" data-i="${i}">
-      <span class="who">${esc(m.name || 'no name on file')}</span>
-      <span class="tags">${tags.join('<br>')}</span>
-      <span class="where">${where.join(' · ') || '—'}</span>
-    </button>`;
-}
-
-let lastFound = [];
-async function findMembers(){
-  const seq = ++findSeq;
-  const text = $('q').value.trim();
-  const tier = $('tier').value;
-  const km   = $('near').value;
-
-  if (!text && !km && !tier) {
-    results.innerHTML = '';
-    findMsg.textContent = 'Type a name, or move the map over an area and pick a distance.';
-    return;
-  }
-  findMsg.textContent = 'Looking…';
-
-  const args = { in_text: text || null, in_tier: tier || null, in_limit: 300,
-                 in_lat: null, in_lng: null, in_radius_km: null };
-  if (km) {
-    const c = mapReady ? map.getCenter() : { lat: -26.05, lng: 28.04 };
-    args.in_lat = c.lat; args.in_lng = c.lng; args.in_radius_km = Number(km);
-  }
-
-  const { data, error } = await sb.rpc('control_room_members', args);
-  if (seq !== findSeq) return;
-
-  if (error) {
-    results.innerHTML = '';
-    findMsg.textContent = /not.*(exist|found)|schema cache|42883|PGRST202/i.test(error.message || '')
-      ? 'Member search is not switched on in the database yet.'
-      : /operator|42501|permission/i.test(error.message || '')
-        ? 'Your sign-in is not recognised as an operator.'
-        : 'Could not search: ' + error.message;
-    return;
-  }
-
-  lastFound = data || [];
-  findMsg.textContent = lastFound.length
-    ? `${num(lastFound.length)} member${lastFound.length === 1 ? '' : 's'}${lastFound.length === 300 ? ' (showing the first 300)' : ''}. Tap one to put it on the map.`
-    : 'Nobody matched that.';
-  results.innerHTML = lastFound.map(memberRow).join('');
-  showFound();
-}
-
-function showFound(){
-  if (!mapReady) return;
-  if (!foundLayer) foundLayer = L.layerGroup().addTo(map);
-  foundLayer.clearLayers();
-  for (const m of lastFound) {
-    if (m.lat == null || m.lng == null) continue;
-    L.circleMarker([m.lat, m.lng], { radius: 5, color: '#08210f', weight: 1, fillColor: '#3ddc84', fillOpacity: .95 })
-      .bindPopup(`<b>${esc(m.name || 'no name')}</b><br>${esc(m.suburb || '')}`)
-      .addTo(foundLayer);
-  }
-}
-
-results.addEventListener('click', e => {
-  const btn = e.target.closest('.m');
-  if (!btn) return;
-  const m = lastFound[Number(btn.dataset.i)];
-  if (!m || m.lat == null) { findMsg.textContent = 'No location on file for that member.'; return; }
-  map.setView([m.lat, m.lng], 14);
-  document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'start' });
-});
-
-$('find').addEventListener('click', findMembers);
-$('q').addEventListener('keydown', e => { if (e.key === 'Enter') findMembers(); });
-$('tier').addEventListener('change', findMembers);
-$('near').addEventListener('change', findMembers);
-
-async function load(){
-  const { data, error } = await sb.rpc('control_room');
-  if (error) {
-    $('stamp').textContent = 'could not read Supabase: ' + error.message;
-    $('stamp').className = 'stamp stale';
-    return;
-  }
-  $('stamp').className = 'stamp';
-  render(data);
-}
-function start(){
-  load();
-  clearInterval(timer);
-  timer = setInterval(load, REFRESH_MS);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
-}
+sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_IN" && $("app").style.display !== "flex") start(); });
+start();
 </script>
 </body>
 </html>
